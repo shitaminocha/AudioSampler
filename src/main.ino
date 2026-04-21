@@ -5,7 +5,7 @@
 
 #define ADC_PIN 35 // ADC1_CH7
 #define SAMPLING_FREQUENCY 5000 // Sampling Rate = 1 / 200ms
-#define LOOP_TIME 000 // Timer repeats every 1s, any lower rate cause overflow error due to low DRAM memory
+#define LOOP_TIME 500 // Timer repeats every 1s, any lower rate cause overflow error due to low DRAM memory
 #define SAMPLES 4096
 
 int bufferIndex = 0, lastTime = 0;
