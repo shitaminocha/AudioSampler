@@ -1,7 +1,7 @@
 #include "CommunicationMQTT.h"
 #include "Passwords.h"
 
-const char* mqtt_server = "test.mosquitto.org"; // Default Values
+const char* mqtt_server = "192.168.142.183";
 const char* topic_send = "dakshita/IoT/send";
 const char* topic_echo = "dakshita/IoT/echo";
 

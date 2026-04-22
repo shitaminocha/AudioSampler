@@ -86,8 +86,8 @@ void setup() {
 
 
   // xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(adcTask,  "ADC",  16384, NULL, 3, NULL, 0);
+  xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(adcTask,  "ADC",  16384, NULL, 3, NULL, 1);
 
   uint64_t elapsed = esp_timer_get_time() - windowStart;
   Serial.printf(">setup_window_time_ms:%.2f\n", elapsed / 1000.0f);
