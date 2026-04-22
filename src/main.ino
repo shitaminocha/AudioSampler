@@ -75,9 +75,9 @@ void setup() {
   avgMutex         = xSemaphoreCreateMutex();
   if (!bufferIndexMutex || !peakFreqMutex || !avgMutex) exit(1);
 
-  // MQTTSetup();
-  // topicSend = MQTTGetSendTopic();
-  // topicEcho = MQTTGetEchoTopic();
+  MQTTSetup();
+  topicSend = MQTTGetSendTopic();
+  topicEcho = MQTTGetEchoTopic();
 
   sessionStartUs = esp_timer_get_time();   // start tracking from here
 
@@ -85,9 +85,9 @@ void setup() {
   xTimerStart(myTimer, 0);
 
 
-  xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
+  // xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(adcTask,  "ADC",  16384, NULL, 3, NULL, 0);
-  // xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 0);
 
   uint64_t elapsed = esp_timer_get_time() - windowStart;
   Serial.printf(">setup_window_time_ms:%.2f\n", elapsed / 1000.0f);
@@ -143,38 +143,40 @@ void mqttTask(void *pvParameters) {
 void loraTask(void *pvParameters) {
   Serial.println("LoRa Initialising");
 
-  int state = radio.begin();
+  SPI.begin(5, 19, 27, 18);   // SCK, MISO, MOSI, CS — required for TTGO
+
+  int state = radio.begin(868.0);
   if (state != RADIOLIB_ERR_NONE) {
     Serial.printf("LoRa Radio init failed: %d\n", state);
-    return;
+    vTaskDelete(NULL);
   }
   Serial.println("LoRa Radio OK");
-  uint32_t devAddr = 0x260B07DD;
-  uint8_t appSKey[] = { 0xB3, 0x49, 0x0B, 0x9D, 0x2B, 0x5D, 0x96, 0x03,
-                      0x8F, 0xD6, 0xC8, 0x27, 0xA1, 0x89, 0x3F, 0x96 };
-  node.beginABP (devAddr,keyNWKS, NULL, keyEncNWKS, appSKey);
-  Serial.println("Joining TTN via OTAA");
-  node.beginOTAA(joinEUI, devEUI, keyNWKS, appKey);
-  delay (1000);
-  // int activateState = node.activateOTAA();
-  // if (activateState != RADIOLIB_ERR_NONE) {
-  //   Serial.printf("activateOTAA failed: %d\n", activateState);
-  //   vTaskDelete(NULL);
-  // }
-  // Serial.println("Joined TTN successfully!");
+  radio.setSyncWord(0x34);
+
+  // ABP credentials — from TTN console
+  uint32_t devAddr  = 0x260B07DD;
+  // uint8_t  nwkSKey[] = { 0xXX, 0xXX, ... };  // your NwkSEncKey from TTN
+  uint8_t  appSKey[] = { 0xB3, 0x49, 0x0B, 0x9D, 0x2B, 0x5D, 0x96, 0x03,
+                         0x8F, 0xD6, 0xC8, 0x27, 0xA1, 0x89, 0x3F, 0x96 };
+
+  node.beginABP(devAddr, fNwkSIntKey, sNwkSIntKey, nwkSEncKey, appSKey);
+  state = node.activateABP();
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.printf("ABP failed: %d\n", state);
+    vTaskDelete(NULL);
+  }
+  Serial.println("ABP session started");
 
   for (;;) {
     float valueToSend = lastAvg;
     loRaSend(valueToSend);
-    delay (1000);
-    trackTransmission(sizeof(float));   // track 4-byte float payload
-    vTaskDelay(NULL);
+    trackTransmission(sizeof(float));
+    vTaskDelay(pdMS_TO_TICKS(15000));
   }
 }
 
 void computeFFT(int* rawSamples) {
   uint64_t t0 = esp_timer_get_time();
-
   for (int i = 0; i < SAMPLES; i++) {
     fftBuffer[i * 2 + 0] = rawSamples[i] * window[i];
     fftBuffer[i * 2 + 1] = 0.0f;
@@ -235,6 +237,7 @@ void timerCallback(TimerHandle_t xTimer) {
   snprintf(msg, sizeof(msg), "%.2f", avg);
   trackTransmission(strlen(msg));
 }
+
 // Called every time a payload is published (MQTT or LoRa)
 // Before FFT completes peakFreq == 0 so we're at the initial rate.
 // After FFT sets peakFreq we're at the adaptive rate.
