@@ -43,51 +43,48 @@ void callback(char* topic, byte* payload, unsigned int length) {
     float avg = (float)sum / 100.0;
 
     Serial.println();
-    Serial.println("====== FINAL RESULT ======");
     Serial.print("Average Adjusted RTT over 100 samples: ");
     Serial.print(avg);
     Serial.println(" ms");
     Serial.println("==========================");
-
-    while (true); // Stop after collecting 100 samples
+    // while (true); // Stop after collecting 100 samples
   }
 }
 
 void reconnect() {
   while (!client.connected()) {
-    // DEBUG:
-    // Serial.print("Attempting MQTT connection------------------------------------------------");
-
+    Serial.print ("Attempting MQTT Connection");
     String clientId = "ESP32Client-" + String(random(0xffff), HEX);
 
     if (client.connect(clientId.c_str())) {
-      // DEBUG:
-      // Serial.println("connected---------------------------------------------------");
+      Serial.println("Client Connected");
       client.subscribe(topic_echo);
     } else {
-      // DEBUG:
-      // Serial.printf("failed, rc=%d\n", client.state());
+      Serial.printf("Failed, rc=%d\n", client.state());
       delay(1000);
     }
   }
 }
-
 
 const char* MQTTGetSendTopic () {
     return topic_send;
 }
 
 const char* MQTTGetEchoTopic () {
-        return topic_echo;
+    return topic_echo;
 }
 
 void MQTTPublish(const char* topic, const char* msg) {
+  uint64_t windowStart = esp_timer_get_time();
   if (client.connected()) client.publish(topic, msg);
+  uint64_t windowEnd = esp_timer_get_time();
+  uint64_t elapsed   = windowEnd - windowStart;
+  Serial.printf(">mqtt_publish_window_time_ms:%.2f\n", elapsed / 1000.0f);
 }
 
 void MQTTSetup() {
-  // DEBUG:
-  // Serial.println("Connecting to WiFi-------------------------------------");
+  uint64_t windowStart = esp_timer_get_time();
+  Serial.println("Connecting to WiFi-------------------------------------");
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   unsigned long startAttempt = millis();
@@ -95,30 +92,28 @@ void MQTTSetup() {
     Serial.print(".");
     delay(5000);
 
-    if (millis() - startAttempt > 50000) {   // 10 sec timeout
-      // DEBUG:
-      // Serial.println("WiFi FAILED. Rebooting---------------------------------------------------");
-      ESP.restart();
-    }
+    if (millis() - startAttempt > 50000) ESP.restart();
   }
 
-  // DEBUG:
-  // Serial.println("WiFi connected---------------------------------------------------");
+  Serial.println("WiFi connected---------------------------------------------------");
 
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 
-  // DEBUG:
-  // Serial.println("Connecting to MQTT...");
+  uint64_t windowEnd = esp_timer_get_time();
+  uint64_t elapsed   = windowEnd - windowStart;
+  Serial.printf("mqtt_setup_window_time_ms:%.2f\n", elapsed / 1000.0f);
   reconnect();
 }
 
 
 void MQTTloop() {
+  Serial.print ("Attempting MQTT Connection");
   client.loop();
   if (!client.connected()) reconnect();
+  Serial.print ("MQTT Connected");
 
   static unsigned long last_send = 0;
   if (rtt_count < 100 && millis() - last_send > 1000) {
