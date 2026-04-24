@@ -221,7 +221,7 @@ Before FFT completes, the system samples at `MAX_SAMPLING_FREQ` (500 Hz). After 
 
 Each time the sample buffer fills, `computeAverage()` is called over all `FFT_SAMPLES` values. The result is stored in `lastAvg` under mutex protection and flagged with `avgReady = true` for the MQTT and LoRa tasks to consume.
 
-![MaxSamplingFreq](Images\MaxSamplingFreq.png)
+![MaxSamplingFreq](Images/MaxSamplingFreq.png)
 
 ### MQTT Transmission (Edge Server)
 
@@ -232,7 +232,7 @@ The `mqttTask` runs on Core 0. It:
 - Accumulates 100 RTT samples then prints the average adjusted RTT
 
 
-![alt text](Images\MQTTEcho.png)
+![MQTTEcho](Images/MQTTEcho.png)
 
 ### LoRaWAN Transmission (Cloud)
 
@@ -266,7 +266,7 @@ The ESP32 ADC hardware ceiling is approximately **83,000 Hz**. In practice `ets_
 
 To measure the true hardware maximum, set `MAX_SAMPLING_FREQ` to `83000` and `SAMPLES` to `64`, then observe the `>per_window` trace.
 
-![MaxSamplingFreq](Images\MaxSamplingFreq.png)
+![MaxSamplingFreq](Images/MaxSamplingFreq.png)
 
 
 ```
@@ -291,8 +291,6 @@ Measured in `adcTask` using `esp_timer_get_time()` around the full fill-FFT-aver
 | Window fill at 228 Hz (4096 samples) | ~17.96 seconds | ~24s
 | Window fill at 10 Hz (4096 samples) | ~409 seconds |
 
-<!-- 📷 INSERT TABLE or GRAPH: measured per-window times at initial vs adaptive rate, from Teleplot data -->
-
 ### Energy Savings
 
 Energy is proportional to the number of ADC reads per second. At the adaptive rate the savings are:
@@ -305,8 +303,8 @@ Energy saving ≈ 1 - (adaptive_rate / initial_rate)
 In practice, `ets_delay_us` is a busy-wait so the CPU does not sleep between samples. True energy savings require using the ESP32 light-sleep mode between samples with a timer wakeup. The current implementation demonstrates the sampling rate reduction but does not implement hardware sleep.
 
 
-![alt text](Images\image-4.png)![alt text](Images\image-5.png)
-![alt text](Images\image-2.png)
+![EnergySaving](Images/image-4.png)![alt text](Images/image-5.png)
+![EnergySaving2](Images/image-2.png)
 
 
 ### Data Volume
@@ -319,9 +317,9 @@ Tracked by `trackTransmission()` and printed every 10 adaptive packets. Teleplot
 - `>data_saving_pct` — percentage reduction
 
 MQTT initial bytes
-![MQTT Transmission](Images\image-1.png)
+![MQTT Transmission](Images/image-1.png)
 
-![alt text](Images\image-7.png)
+![MQTT Transmission](Images/image-7.png)
 
 ### End-to-End Latency (RTT)
 
@@ -333,20 +331,20 @@ Measured by the MQTT callback in `CommunicationMQTT.cpp`:
 
 After 100 samples, the average adjusted RTT is printed to Serial.
 
-![alt text](Images\image-6.png)
+![RTT](Images/image-6.png)
 
 ### Signal 2: 
  A = 2 sin (2 * PI * 5t) + 4 sin (2 * PI * 10t) + 1.5 sin (2 * PI * 25t)
 
- ![alt text](Images/Signal2.png)
+ ![Signal2](Images/Signal2.png)
 
 
- ![alt text](Images/Signal2_current.png)
+ ![Signal2](Images/Signal2_current.png)
 
  ### Signal 3: 
  A = 8 sin (2 * PI * 20t)
 
- ![alt text](Images/Signal3_current.png)
+ ![Signal3](Images/Signal3_current.png)
 
 ## LLM Usage
 
