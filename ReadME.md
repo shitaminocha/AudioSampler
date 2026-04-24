@@ -171,9 +171,8 @@ Open the Serial Monitor at 115200 baud to see live output. Open the Teleplot ext
 
 All tunable parameters are:
 
-| Parameter | Default | Description |
-|---|---|---| main.ino
-| `SAMPLING_FREQUENCY` | 228 |  Initial oversampling rate|
+| Parameter | Default | Description 
+| `SAMPLING_FREQUENCY` | 228 |  Initial oversampling rate |
 | `SAMPLES` | 500 Hz |  FFT window size — must be a power of 2|
 | `FFT_MAG_THRESHOLD_RATIO` | 0.05 | Fraction of peak magnitude for frequency detection |
 
