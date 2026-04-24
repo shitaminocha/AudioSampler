@@ -58,8 +58,6 @@ void trackTransmission(uint32_t payloadBytes);
 
 void setup() {
   Serial.begin(115200);
-  delay(500);
-
   // Initialize signal generator: DAC pin 25, 500Hz sample rate
   signalGeneratorSetup(25, 500);
   // Set initial frequency (e.g., 2Hz)
@@ -67,10 +65,13 @@ void setup() {
   // Start generating the signal
   signalGeneratorStart();
 
-  sampleBuffer = (int*) heap_caps_malloc(SAMPLES * sizeof(int), MALLOC_CAP_8BIT);
-  window = (float*) heap_caps_malloc(SAMPLES * sizeof(float), MALLOC_CAP_8BIT);
-  fftBuffer = (float*) heap_caps_malloc(SAMPLES * 2 * sizeof(float), MALLOC_CAP_8BIT);
-  if (!sampleBuffer || !window || !fftBuffer) return;
+  sampleBuffer = (int*) heap_caps_malloc(SAMPLES * sizeof(int), MALLOC_CAP_SPIRAM);
+  window = (float*) heap_caps_malloc(SAMPLES * sizeof(float), MALLOC_CAP_SPIRAM);
+  fftBuffer = (float*) heap_caps_malloc(SAMPLES * 2 * sizeof(float), MALLOC_CAP_SPIRAM);
+  if (!sampleBuffer || !window || !fftBuffer) {
+    Serial.println("FATAL: Memory allocation failed!");
+    while(1) vTaskDelay(1);
+  }
 
   analogSetAttenuation(ADC_11db);
   analogReadResolution(12);
@@ -101,12 +102,18 @@ void adcTask(void *pvParameters) {
 
   while (true) {
     int raw = analogRead(ADC_PIN);
+
     Serial.printf(">raw:%d\n", raw);
     Serial.printf(">volts:%.2f\n", raw * 3.3f / (SAMPLES - 1));
 
     xSemaphoreTake(bufferIndexMutex, portMAX_DELAY);
-    if (bufferIndex < SAMPLES) sampleBuffer[bufferIndex++] = raw;
-    else {
+    bool bufferFull = (bufferIndex >= SAMPLES);
+    if (!bufferFull && bufferIndex < SAMPLES) {
+      sampleBuffer[bufferIndex++] = raw;
+    }
+    xSemaphoreGive(bufferIndexMutex);
+
+    if (bufferFull) {
       float avg = computeAverage(sampleBuffer, SAMPLES);
       switchBuffer();
       computeFFT();
@@ -114,8 +121,11 @@ void adcTask(void *pvParameters) {
       uint64_t t1 = esp_timer_get_time();
       Serial.printf(">per_window:%llu\n", t1 - t0);
       t0 = t1;
+      
+      xSemaphoreTake(bufferIndexMutex, portMAX_DELAY);
+      bufferIndex = 0;
+      xSemaphoreGive(bufferIndexMutex);
     }
-    xSemaphoreGive(bufferIndexMutex);
 
     xSemaphoreTake(peakFreqMutex, portMAX_DELAY);
     float freq = peakFreq;
@@ -132,22 +142,26 @@ void adcTask(void *pvParameters) {
 }
 
 void mqttTask(void *pvParameters) {
-  MQTTloop();
+  while (true) {
+    MQTTloop();
 
-  float avg = 0;
-  xSemaphoreTake(avgMutex, portMAX_DELAY);
-  if (avgReady) {
-    avg = lastAvg;
-    avgReady = false;
+    float avg = 0;
+    xSemaphoreTake(avgMutex, portMAX_DELAY);
+    if (avgReady) {
+      avg = lastAvg;
+      avgReady = false;
+    }
+    xSemaphoreGive(avgMutex);
+
+    if (topicSend) {
+      char msg[32];
+      snprintf(msg, sizeof(msg), "%.2f", avg);
+      MQTTPublish(topicSend, msg);
+      trackTransmission(strlen(msg));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10000));
   }
-  xSemaphoreGive(avgMutex);
-
-  char msg[32];
-  snprintf(msg, sizeof(msg), "%.2f", avg);
-  MQTTPublish(topicSend, msg);
-  trackTransmission(strlen(msg));   // track bytes published
-
-  vTaskDelay(pdMS_TO_TICKS(10000));
 }
 
 void loraTask(void *pvParameters) {
@@ -242,9 +256,7 @@ void switchBuffer () {
     fftBuffer[i * 2 + 0] = sampleBuffer[i];
     fftBuffer[i * 2 + 1] = 0.0f;
   }
-  xSemaphoreTake(bufferIndexMutex, portMAX_DELAY);
-  bufferIndex = 0;
-  xSemaphoreGive(bufferIndexMutex);
+  // bufferIndex reset by caller after releasing mutex
 }
 
 float computeAverage(int* buf, int len) {

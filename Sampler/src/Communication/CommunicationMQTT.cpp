@@ -14,8 +14,12 @@ PubSubClient client(espClient);
 
 // Processes incoming messages and calculates Round-Trip Time (RTT)
 void callback(char* topic, byte* payload, unsigned int length) {
-  payload[length] = '\0';
-  String message = String((char*)payload);
+  Serial.printf("CALLBACK TRIGGERED on topic: %s\n", topic);
+
+  char messageArr[length + 1];
+  memcpy(messageArr, payload, length);
+  messageArr[length] = '\0';
+  String message = String(messageArr);
 
   int commaIndex = message.indexOf(',');
   if (commaIndex == -1) return;
@@ -79,6 +83,7 @@ void MQTTPublish(const char* topic, const char* msg) {
   uint64_t windowEnd = esp_timer_get_time();
   uint64_t elapsed   = windowEnd - windowStart;
   Serial.printf("mqtt_publish_time_ms:%.2f\n", elapsed / 1000.0f);
+  client.loop(); // Ensure we process incoming messages and maintain connection
 }
 
 void MQTTSetup() {
