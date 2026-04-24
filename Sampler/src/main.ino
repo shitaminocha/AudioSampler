@@ -58,6 +58,11 @@ void trackTransmission(uint32_t payloadBytes);
 
 void setup() {
   Serial.begin(115200);
+  delay(2000);          // wait for USB serial to connect
+  Serial.flush();
+  Serial.println("Starting Program");
+  Serial.println("initialise sg");
+
   // Initialize signal generator: DAC pin 25, 500Hz sample rate
   signalGeneratorSetup(25, 500);
   // Set initial frequency (e.g., 2Hz)
@@ -65,9 +70,9 @@ void setup() {
   // Start generating the signal
   signalGeneratorStart();
 
-  sampleBuffer = (int*) heap_caps_malloc(SAMPLES * sizeof(int), MALLOC_CAP_SPIRAM);
-  window = (float*) heap_caps_malloc(SAMPLES * sizeof(float), MALLOC_CAP_SPIRAM);
-  fftBuffer = (float*) heap_caps_malloc(SAMPLES * 2 * sizeof(float), MALLOC_CAP_SPIRAM);
+  sampleBuffer = (int*) heap_caps_malloc(SAMPLES * sizeof(int), MALLOC_CAP_8BIT);
+  window = (float*) heap_caps_malloc(SAMPLES * sizeof(float), MALLOC_CAP_8BIT);
+  fftBuffer = (float*) heap_caps_malloc(SAMPLES * 2 * sizeof(float), MALLOC_CAP_8BIT);
   if (!sampleBuffer || !window || !fftBuffer) {
     Serial.println("FATAL: Memory allocation failed!");
     while(1) vTaskDelay(1);
@@ -87,6 +92,8 @@ void setup() {
   topicEcho = MQTTGetEchoTopic();
 
   sessionStartUs = esp_timer_get_time();   // start tracking from here
+
+  Serial.println("Starting creating tasks...");
 
   // xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 0);

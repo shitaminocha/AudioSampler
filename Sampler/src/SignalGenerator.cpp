@@ -45,7 +45,7 @@ void signalGeneratorTask(void *pvParameters) {
 
     while (signalRunning) {
         // Calculate the sine sample: sin(phase) scaled to 0-255 for DAC
-        float sample = sin(signalPhase) * 50.0f + 127.5f;
+        float sample = sin(signalPhase) * 40.0f + 127.5f;
         // Output to DAC
         dacWrite(signalDacPin, (uint8_t)sample);
         Serial.printf(">signal:%d\n", (uint8_t)sample);
