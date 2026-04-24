@@ -191,7 +191,7 @@ The `SignalGenerator` task runs on Core 1 at low priority. It computes a sine wa
 
 **Voltage divider circuit** (required to bias the AC signal into the ADC's 0–3.1V range):
 
-![alt text](image.png)
+![alt text](Images\VoltageDivider.png)
 
 ### ADC Sampling and FFT
 
@@ -216,7 +216,7 @@ which is, $$\text{Voltage} = \text{raw} \times \frac{3.3}{4095}$$
 
 Before FFT completes, the system samples at `MAX_SAMPLING_FREQ` (500 Hz). After the first FFT window, the rate drops to `2 × f_max`. For a signal with components at 3 Hz and 5 Hz, `f_max = 5 Hz` and the adaptive rate is 10 Hz — a 50× reduction.
 
-![alt text](image-1.png)
+![alt text](Images\PeakFreq.png)
 
 ### Window Average
 
@@ -233,7 +233,7 @@ The `mqttTask` runs on Core 0. It:
 - Accumulates 100 RTT samples then prints the average adjusted RTT
 
 
-![alt text](image.png)
+![alt text](Images\MQTTEcho.png)
 
 ### LoRaWAN Transmission (Cloud)
 
@@ -306,7 +306,7 @@ Energy saving ≈ 1 - (adaptive_rate / initial_rate)
 In practice, `ets_delay_us` is a busy-wait so the CPU does not sleep between samples. True energy savings require using the ESP32 light-sleep mode between samples with a timer wakeup. The current implementation demonstrates the sampling rate reduction but does not implement hardware sleep.
 
 
-![alt text](image-4.png)![alt text](image-5.png)
+![alt text](Images\image-4.png)![alt text](Images\image-5.png)
 ![alt text](Images\image-2.png)
 
 
@@ -322,7 +322,7 @@ Tracked by `trackTransmission()` and printed every 10 adaptive packets. Teleplot
 MQTT initial bytes
 ![MQTT Transmission](Images\image-1.png)
 
-![alt text](image-7.png)
+![alt text](Images\image-7.png)
 
 ### End-to-End Latency (RTT)
 
@@ -334,7 +334,7 @@ Measured by the MQTT callback in `CommunicationMQTT.cpp`:
 
 After 100 samples, the average adjusted RTT is printed to Serial.
 
-![alt text](image-6.png)
+![alt text](Images\image-6.png)
 
 ---
 
@@ -364,32 +364,3 @@ This project was developed iteratively using Claude as the primary coding assist
 - **Accumulated context errors**: Over a long conversation, earlier design decisions (like using a queue vs a shared buffer) were sometimes contradicted in later suggestions, requiring the user to catch and correct inconsistencies.
 
 ---
-
-Replace `ets_delay_us` with `esp_sleep_enable_timer_wakeup` + `esp_light_sleep_start()`:
-
-```cpp
-// Replace this:
-ets_delay_us(delayUs);
-
-// With this (saves ~90% current during idle):
-esp_sleep_enable_timer_wakeup(delayUs);
-esp_light_sleep_start();
-```
-
-### 4. Multiple input signals not tested
-
-**Missing**: The assignment bonus asks for at least 3 different input signals and performance comparison between them.
-
-**Suggestion**: Add a `#define SIGNAL_TYPE` compile flag and switch between signal definitions:
-
-```cpp
-#if SIGNAL_TYPE == 1
-  // 2sin(2π3t) + 4sin(2π5t)
-#elif SIGNAL_TYPE == 2
-  // Single high-frequency: 8sin(2π20t)
-#elif SIGNAL_TYPE == 3
-  // Closely spaced: sin(2π4t) + sin(2π5t)
-#endif
-```
-
-Re-flash with each signal type and record the FFT output, adaptive rate, and data savings for comparison.
