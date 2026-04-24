@@ -58,6 +58,8 @@ The signal can be generated internally via the ESP32 DAC and read back on the AD
 
 > **⚠️ Note:** GPIO 26 is shared between the SX1276 DIO0 and DAC2. The DAC output uses GPIO 25 (DAC1) to avoid this conflict.
 
+![Setup](Images\Schema.jpeg)
+
 ![Setup](Images\Setup.jpeg)
 
 ---

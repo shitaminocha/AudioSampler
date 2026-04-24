@@ -88,7 +88,7 @@ void setup() {
   sessionStartUs = esp_timer_get_time();   // start tracking from here
 
   buildSignalLUT();
-  xTaskCreatePinnedToCore(TaskDACGenerator, "DAC", 2048, NULL, 0, NULL, 0);
+  // xTaskCreatePinnedToCore(TaskDACGenerator, "DAC", 2048, NULL, 0, NULL, 0);
   //xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(adcTask,  "ADC",  16384, NULL, 3, NULL, 1);
