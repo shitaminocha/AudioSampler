@@ -190,7 +190,7 @@ The `SignalGenerator` task runs on Core 1 at low priority. It computes a sine wa
 
 **Voltage divider circuit** (required to bias the AC signal into the ADC's 0–3.1V range):
 
-![alt text](Images\VoltageDivider.png)
+![VoltageDividerCircuit](Images/VoltageDivider.png)
 
 ### ADC Sampling and FFT
 
@@ -203,7 +203,7 @@ The `adcTask` runs on Core 1 at the highest priority. It:
 5. Sets `peakFreq` to the dominant frequency, switches `adaptiveActive = true`
 6. The delay between samples is recalculated each iteration: `1,000,000 / (2 × peakFreq)` µs
 
-![Signal Output](Images\raw-volts-signal.png)
+![Signal Output](Images/raw-volts-signal.png)
 
 The ADC assumes a linear relationship between the input voltage and the digital output. The formula is essentially a ratio:
 $$\frac{V_{in}}{V_{ref}} = \frac{Digital_{raw}}{Digital_{max}}
@@ -215,7 +215,7 @@ which is, $$\text{Voltage} = \text{raw} \times \frac{3.3}{4095}$$
 
 Before FFT completes, the system samples at `MAX_SAMPLING_FREQ` (500 Hz). After the first FFT window, the rate drops to `2 × f_max`. For a signal with components at 3 Hz and 5 Hz, `f_max = 5 Hz` and the adaptive rate is 10 Hz — a 50× reduction.
 
-![alt text](Images\PeakFreq.png)
+![FindingMaxFrequency](Images/PeakFreq.png)
 
 ### Window Average
 
