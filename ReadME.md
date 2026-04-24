@@ -58,6 +58,8 @@ The signal can be generated internally via the ESP32 DAC and read back on the AD
 
 > **⚠️ Note:** GPIO 26 is shared between the SX1276 DIO0 and DAC2. The DAC output uses GPIO 25 (DAC1) to avoid this conflict.
 
+![Setup](Images\Setup.jpeg)
+
 ---
 
 ## Project Structure
@@ -167,20 +169,17 @@ Open the Serial Monitor at 115200 baud to see live output. Open the Teleplot ext
 
 ## Configuration
 
-All tunable parameters are in `include/Globals.h`:
+All tunable parameters are:
 
 | Parameter | Default | Description |
-|---|---|---|
-| `FFT_SAMPLES` | 512 | FFT window size — must be a power of 2 |
-| `MAX_SAMPLING_FREQ` | 500 Hz | Initial oversampling rate |
+|---|---|---| main.ino
+| `SAMPLING_FREQUENCY` | 228 |  Initial oversampling rate|
+| `SAMPLES` | 500 Hz |  FFT window size — must be a power of 2|
 | `FFT_MAG_THRESHOLD_RATIO` | 0.05 | Fraction of peak magnitude for frequency detection |
-| `WINDOW_DURATION_SEC` | 30 | Aggregation window in seconds |
-| `DAC_OFFSET` | 2048 | DAC midpoint (1.65V) |
-| `DAC_AMPLITUDE` | 1800 | DAC swing (keeps output in 0–4095 range) |
 
-Signal composition is set in the signal generator. The default is a 2-component sine wave: `2·sin(2π·3·t) + 4·sin(2π·5·t)`.
+Signal composition is set in the signal generator. The default is a 2-component sine wave: `2·sin(2π·5·t)`.
 
-To change the signal, modify `amplitudes[]` and `frequencies[]` in `Globals.h`.
+To change the signal, modify `amplitudes[]` and `frequencies[]` in `SignalGenerator.h`.
 
 ---
 
@@ -192,7 +191,7 @@ The `SignalGenerator` task runs on Core 1 at low priority. It computes a sine wa
 
 **Voltage divider circuit** (required to bias the AC signal into the ADC's 0–3.1V range):
 
-<!-- 📷 INSERT IMAGE: voltage divider schematic — 1µF capacitor + two 10kΩ resistors biasing signal to 2.5V, feeding into GPIO 35 -->
+![alt text](image.png)
 
 ### ADC Sampling and FFT
 
@@ -205,17 +204,25 @@ The `adcTask` runs on Core 1 at the highest priority. It:
 5. Sets `peakFreq` to the dominant frequency, switches `adaptiveActive = true`
 6. The delay between samples is recalculated each iteration: `1,000,000 / (2 × peakFreq)` µs
 
-<!-- 📷 INSERT GRAPH: Teleplot screenshot showing >raw, >signal, and >peak_freq over time — showing rate dropping after FFT completes -->
+![Signal Output](Images\raw-volts-signal.png)
+
+The ADC assumes a linear relationship between the input voltage and the digital output. The formula is essentially a ratio:
+$$\frac{V_{in}}{V_{ref}} = \frac{Digital_{raw}}{Digital_{max}}
+$$When you rearrange this to solve for $V_{in}$ (the actual voltage),
+you get:$$V_{in} = Digital_{raw} \times \frac{V_{ref}}{Digital_{max}}$$
+which is, $$\text{Voltage} = \text{raw} \times \frac{3.3}{4095}$$
 
 ### Adaptive Sampling Rate
 
 Before FFT completes, the system samples at `MAX_SAMPLING_FREQ` (500 Hz). After the first FFT window, the rate drops to `2 × f_max`. For a signal with components at 3 Hz and 5 Hz, `f_max = 5 Hz` and the adaptive rate is 10 Hz — a 50× reduction.
 
-<!-- 📷 INSERT GRAPH: Teleplot >peak_freq_adaptive over time — showing initial value of 0, then jump to 10Hz after FFT -->
+![alt text](image-1.png)
 
 ### Window Average
 
 Each time the sample buffer fills, `computeAverage()` is called over all `FFT_SAMPLES` values. The result is stored in `lastAvg` under mutex protection and flagged with `avgReady = true` for the MQTT and LoRa tasks to consume.
+
+![MaxSamplingFreq](Images\MaxSamplingFreq.png)
 
 ### MQTT Transmission (Edge Server)
 
@@ -225,7 +232,8 @@ The `mqttTask` runs on Core 0. It:
 - Measures RTT by timestamping each publish and receiving the echo from `dakshita/IoT/echo` via the callback
 - Accumulates 100 RTT samples then prints the average adjusted RTT
 
-<!-- 📷 INSERT SCREENSHOT: TTN Live Data tab showing uplink messages with decoded average value -->
+
+![alt text](image.png)
 
 ### LoRaWAN Transmission (Cloud)
 
@@ -235,7 +243,7 @@ The `loraTask` (currently commented out in `setup()`) runs on Core 0. It:
 - Encodes `lastAvg` as a 4-byte IEEE 754 float and calls `node.sendReceive()`
 - Transmits every 15 seconds, respecting the TTN fair use policy
 
-To decode the payload on TTN, add this formatter under **Payload Formatters → Uplink → Custom Javascript**:
+To decode the payload on TTN, this custom script is the custom formatter in the TTN Terminal:
 
 ```javascript
 function decodeUplink(input) {
@@ -259,17 +267,29 @@ The ESP32 ADC hardware ceiling is approximately **83,000 Hz**. In practice `ets_
 
 To measure the true hardware maximum, set `MAX_SAMPLING_FREQ` to `83000` and `SAMPLES` to `64`, then observe the `>per_window` trace.
 
-<!-- 📷 INSERT GRAPH: Teleplot >per_window_time_ms showing window execution time at initial vs adaptive rate -->
+![MaxSamplingFreq](Images\MaxSamplingFreq.png)
+
+
+```
+per_window_ms = 280 (minimum) - 311 (maximum) // observed from graph
+true_sample_rate = samples / time
+                 = 64 / 0.280 - 64 / 0.311
+                 = 205 - 228 Hz
+```
+This is much much lower than the hardware 83000Hz because analogRead () on ESP32 Arduino has significant overhead from the driver, I2C bus and ADC calibration code.
+
+Switching to adc1_get_raw() has made little difference (from 280ms to 276 minimum). To gain more speed, we'd have to switch to I2S/DMA.
 
 ### Per-Window Execution Time
 
-Measured in `adcTask` using `esp_timer_get_time()` around the full fill-FFT-average cycle. Transmitted as `>per_window` in microseconds.
+Measured in `adcTask` using `esp_timer_get_time()` around the full fill-FFT-average cycle. Plotted as `>per_window` in microseconds.
 
 | Phase | Typical value |
 |---|---|
 | ADC read (single sample) | ~20–50 µs |
 | FFT (4096-point) | ~50–80 ms |
-| Window fill at 500 Hz (4096 samples) | ~8.2 seconds |
+| Window fill at 500 Hz (4096 samples) | ~8.2 seconds | NaN
+| Window fill at 228 Hz (4096 samples) | ~17.96 seconds | ~24s
 | Window fill at 10 Hz (4096 samples) | ~409 seconds |
 
 <!-- 📷 INSERT TABLE or GRAPH: measured per-window times at initial vs adaptive rate, from Teleplot data -->
@@ -280,12 +300,15 @@ Energy is proportional to the number of ADC reads per second. At the adaptive ra
 
 ```
 Energy saving ≈ 1 - (adaptive_rate / initial_rate)
-             = 1 - (10 / 500) = 98%
+             = 1 - (10 / 228) = 95.6%
 ```
 
 In practice, `ets_delay_us` is a busy-wait so the CPU does not sleep between samples. True energy savings require using the ESP32 light-sleep mode between samples with a timer wakeup. The current implementation demonstrates the sampling rate reduction but does not implement hardware sleep.
 
-<!-- 📷 INSERT GRAPH: bar chart comparing estimated active time (proportional to samples/sec) at initial vs adaptive rate -->
+
+![alt text](image-4.png)![alt text](image-5.png)
+![alt text](Images\image-2.png)
+
 
 ### Data Volume
 
@@ -296,7 +319,10 @@ Tracked by `trackTransmission()` and printed every 10 adaptive packets. Teleplot
 - `>throughput_initial` and `>throughput_adaptive` — bytes per second
 - `>data_saving_pct` — percentage reduction
 
-<!-- 📷 INSERT GRAPH: Teleplot showing bytes_initial and bytes_adaptive growing over time, with data_saving_pct stabilising -->
+MQTT initial bytes
+![MQTT Transmission](Images\image-1.png)
+
+![alt text](image-7.png)
 
 ### End-to-End Latency (RTT)
 
@@ -308,24 +334,19 @@ Measured by the MQTT callback in `CommunicationMQTT.cpp`:
 
 After 100 samples, the average adjusted RTT is printed to Serial.
 
-<!-- 📷 INSERT GRAPH: Teleplot >rtt over 100 samples, showing distribution and average -->
+![alt text](image-6.png)
 
 ---
 
 ## LLM Usage
 
-This project was developed iteratively using Claude (Anthropic) as the primary coding assistant. The workflow consisted of a series of prompts covering:
+This project was developed iteratively using Claude as the primary coding assistant. The workflow consisted of a series of prompts covering:
 
 1. Converting Arduino `loop()` to FreeRTOS tasks
 2. Adding a queue between the ADC and Serial tasks
-3. Integrating FFT using the ESP-DSP library
-4. Implementing binary search for adaptive rate (later replaced with direct Nyquist calculation)
-5. Adding mutexes for shared variables
-6. Integrating MQTT with WiFi
-7. Adding LoRaWAN via RadioLib and TTN
-8. Debugging memory layout, include guard issues, and linker errors
-9. Adding Teleplot telemetry output
-10. Data volume tracking
+3. Data volume tracking
+4. Debugging memory layout, include guard issues, and linker errors
+5. Adding Teleplot telemetry output
 
 ### Opportunities
 
@@ -344,15 +365,7 @@ This project was developed iteratively using Claude (Anthropic) as the primary c
 
 ---
 
-## What is Missing / Suggestions
-
-The following items from the assignment specification are partially or not yet implemented. Suggested code changes are noted for each.
-
-### 1. True energy measurement
-
-**Missing**: The code estimates energy savings from the sampling rate ratio, but does not implement actual low-power sleep between samples.
-
-**Suggestion**: Replace `ets_delay_us` with `esp_sleep_enable_timer_wakeup` + `esp_light_sleep_start()`:
+Replace `ets_delay_us` with `esp_sleep_enable_timer_wakeup` + `esp_light_sleep_start()`:
 
 ```cpp
 // Replace this:
@@ -361,42 +374,6 @@ ets_delay_us(delayUs);
 // With this (saves ~90% current during idle):
 esp_sleep_enable_timer_wakeup(delayUs);
 esp_light_sleep_start();
-```
-
-Measure current draw with a multimeter or INA219 sensor before and after to get real energy numbers.
-
-### 2. LoRa task is commented out
-
-**Missing**: `loraTask` is created but commented out in `setup()`. It needs to be re-enabled and tested with a gateway in range.
-
-**Fix**:
-```cpp
-// Uncomment in setup():
-xTaskCreatePinnedToCore(loraTask, "LoRa", 8192, NULL, 1, NULL, 0);
-// Comment out mqttTask if running both causes memory issues
-```
-
-### 3. Signal is single-frequency, not composite
-
-**Missing**: `SignalGenerator.cpp` generates a single sine wave. The assignment requires `SUM(a_k * sin(f_k))` — a sum of multiple frequency components.
-
-**Suggestion**: Update `signalGeneratorTask` to sum multiple components:
-
-```cpp
-// In Globals.h
-const float amplitudes[]  = {2.0f, 4.0f, 1.0f};
-const float frequencies[] = {3.0f, 5.0f, 8.0f};
-const int   NUM_COMPONENTS = 3;
-
-// In signalGeneratorTask:
-float sample = 0.0f;
-for (int k = 0; k < NUM_COMPONENTS; k++) {
-  sample += amplitudes[k] * sin(2.0f * PI * frequencies[k] * t);
-}
-t += 1.0f / signalSampleRate;
-// Scale to DAC range: sample is in roughly [-7, 7], scale to [0, 255]
-uint8_t dacVal = (uint8_t)((sample / 14.0f + 0.5f) * 255.0f);
-dacWrite(signalDacPin, dacVal);
 ```
 
 ### 4. Multiple input signals not tested
@@ -416,35 +393,3 @@ dacWrite(signalDacPin, dacVal);
 ```
 
 Re-flash with each signal type and record the FFT output, adaptive rate, and data savings for comparison.
-
-### 5. Bonus: Noisy signal with anomaly injection
-
-**Present but not active**: `Globals.h` defines all the constants for Gaussian noise and anomaly injection (`NOISE_SIGMA_LSB`, `ANOMALY_PROB`, etc.) under the `#ifdef BONUS` guard, but the actual injection and filter code is not implemented.
-
-**Suggestion**: Add to `signalGeneratorTask`:
-
-```cpp
-#ifdef BONUS
-  // Gaussian noise (Box-Muller approximation)
-  float noise = 0;
-  for (int i = 0; i < 12; i++) noise += ((float)random(1000) / 1000.0f);
-  noise = (noise - 6.0f) * NOISE_SIGMA_LSB;
-  sample += noise;
-
-  // Anomaly injection
-  if ((float)random(1000) / 1000.0f < ANOMALY_PROB) {
-    float spike = SPIKE_MIN_LSB + (float)random(1000) / 1000.0f * (SPIKE_MAX_LSB - SPIKE_MIN_LSB);
-    sample += (random(2) == 0) ? spike : -spike;
-  }
-#endif
-```
-
-Z-score and Hampel filters would then run over each completed window before the FFT, removing anomalies and tracking TPR/FPR.
-
-### 6. `timerCallback` not used
-
-The code previously had a FreeRTOS timer to trigger the FFT every `LOOP_TIME` ms, but this was removed in favour of triggering FFT when the buffer fills. Consider re-adding the timer as an alternative trigger for fixed-interval aggregation windows independent of sampling rate.
-
----
-
-<!-- 📷 FINAL IMAGE SUGGESTION: System architecture diagram showing all tasks, cores, queues, and external connections (MQTT broker, TTN) -->

@@ -58,7 +58,6 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print ("Attempting MQTT Connection");
     String clientId = "ESP32Client-" + String(random(0xffff), HEX);
-
     if (client.connect(clientId.c_str())) {
       Serial.println("Client Connected");
       client.subscribe(topic_echo);
@@ -83,7 +82,7 @@ void MQTTPublish(const char* topic, const char* msg) {
   uint64_t windowEnd = esp_timer_get_time();
   uint64_t elapsed   = windowEnd - windowStart;
   Serial.printf("mqtt_publish_time_ms:%.2f\n", elapsed / 1000.0f);
-  client.loop(); // Ensure we process incoming messages and maintain connection
+  // client.loop(); // Ensure we process incoming messages and maintain connection
 }
 
 void MQTTSetup() {
@@ -113,10 +112,8 @@ void MQTTSetup() {
 }
 
 void MQTTloop() {
-  Serial.print ("Attempting MQTT Connection");
-  client.loop();
   if (!client.connected()) reconnect();
-  Serial.print ("MQTT Connected");
+  client.loop();
 
   static unsigned long last_send = 0;
   if (rtt_count < 100 && millis() - last_send > 1000) {

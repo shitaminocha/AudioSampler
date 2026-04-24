@@ -3,16 +3,11 @@
 
 #include <Arduino.h>
 
-// Initialize the signal generator with DAC pin and sample rate
-void signalGeneratorSetup(int dacPin, float sampleRate);
+#define NUM_COMPONENTS 1
+extern const float amplitudes[NUM_COMPONENTS];
+extern const float frequencies[NUM_COMPONENTS];
 
-// Set the frequency of the sine wave (in Hz)
-void signalGeneratorSetFrequency(float freq);
-
-// Start generating and outputting the signal
-void signalGeneratorStart();
-
-// Stop generating the signal
-void signalGeneratorStop();
+void buildSignalLUT();
+void TaskDACGenerator(void *pvParameters);
 
 #endif

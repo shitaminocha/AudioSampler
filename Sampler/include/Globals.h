@@ -31,10 +31,6 @@
     #define ACTIVE_FILTER      FILTER_HAMPEL
 #endif
 
-#define NUM_COMPONENTS 3
-extern const float amplitudes[NUM_COMPONENTS];
-extern const float frequencies[NUM_COMPONENTS];
-
 // --- Sampling & FFT ---
 #define FFT_SAMPLES        512    // Must be power of 2
 #define MAX_SAMPLING_FREQ  500.0  // Hz, initial oversampling rate

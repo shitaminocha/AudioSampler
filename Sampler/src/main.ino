@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <esp_dsp.h>
 #include <time.h>
+#include "driver/adc.h"
 #include "freertos/timers.h"
 #include "CommunicationMQTT.h"
 #include "CommunicationLoRa.h"
@@ -12,13 +13,12 @@
 
 // For FFT Analysis and Average Computation
 #define ADC_PIN            35
-#define SAMPLING_FREQUENCY 5000
-#define LOOP_TIME          500
-#define SAMPLES            4096
+#define SAMPLING_FREQUENCY 228 // change to 83000 for measuring max freq
+#define SAMPLES            4096  // change to 64 for measuring max freq
 #define FFT_MAG_THRESHOLD_RATIO  0.05 // Fraction of the peak FFT magnitude used as threshold
 
 int bufferIndex = 0, lastTime = 0;
-float peakFreq    = 0.0f;
+float peakFreq = 0.0f;
 
 int* sampleBuffer = nullptr;
 float* window = nullptr;
@@ -53,7 +53,7 @@ void adcTask(void *pvParameters);
 void mqttTask(void *pvParameters);
 void loraTask(void *pvParameters);
 void computeFFT();
-float computeAverage(int* buf, int len);
+float computeAverage(float* buf, int len);
 void trackTransmission(uint32_t payloadBytes);
 
 void setup() {
@@ -61,14 +61,6 @@ void setup() {
   delay(2000);          // wait for USB serial to connect
   Serial.flush();
   Serial.println("Starting Program");
-  Serial.println("initialise sg");
-
-  // Initialize signal generator: DAC pin 25, 500Hz sample rate
-  signalGeneratorSetup(25, 500);
-  // Set initial frequency (e.g., 2Hz)
-  signalGeneratorSetFrequency(2.0f);
-  // Start generating the signal
-  signalGeneratorStart();
 
   sampleBuffer = (int*) heap_caps_malloc(SAMPLES * sizeof(int), MALLOC_CAP_8BIT);
   window = (float*) heap_caps_malloc(SAMPLES * sizeof(float), MALLOC_CAP_8BIT);
@@ -77,9 +69,11 @@ void setup() {
     Serial.println("FATAL: Memory allocation failed!");
     while(1) vTaskDelay(1);
   }
+  adc1_config_width(ADC_WIDTH_BIT_12);
+  adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_DB_12);
 
-  analogSetAttenuation(ADC_11db);
-  analogReadResolution(12);
+  // analogSetAttenuation(ADC_11db);
+  // analogReadResolution(12);
   pinMode(ADC_PIN, INPUT);
 
   bufferIndexMutex = xSemaphoreCreateMutex();
@@ -93,9 +87,9 @@ void setup() {
 
   sessionStartUs = esp_timer_get_time();   // start tracking from here
 
-  Serial.println("Starting creating tasks...");
-
-  // xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
+  buildSignalLUT();
+  xTaskCreatePinnedToCore(TaskDACGenerator, "DAC", 2048, NULL, 0, NULL, 0);
+  //xTaskCreatePinnedToCore(loraTask, "LoRa", 8192,  NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(mqttTask, "MQTT", 4096,  NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(adcTask,  "ADC",  16384, NULL, 3, NULL, 1);
 }
@@ -108,9 +102,9 @@ void adcTask(void *pvParameters) {
   uint64_t t0 = esp_timer_get_time();
 
   while (true) {
-    int raw = analogRead(ADC_PIN);
+    int raw = adc1_get_raw(ADC1_CHANNEL_0);// switching from analogRead(ADC_PIN); to reduce overhead
 
-    Serial.printf(">raw:%d\n", raw);
+    Serial.printf(">raw:%d\n", raw + 300);
     Serial.printf(">volts:%.2f\n", raw * 3.3f / (SAMPLES - 1));
 
     xSemaphoreTake(bufferIndexMutex, portMAX_DELAY);
@@ -121,12 +115,12 @@ void adcTask(void *pvParameters) {
     xSemaphoreGive(bufferIndexMutex);
 
     if (bufferFull) {
-      float avg = computeAverage(sampleBuffer, SAMPLES);
       switchBuffer();
+      float avg = computeAverage(fftBuffer, SAMPLES);
       computeFFT();
       
       uint64_t t1 = esp_timer_get_time();
-      Serial.printf(">per_window:%llu\n", t1 - t0);
+      Serial.printf(">per_window_ms:%.2f\n", (t1 - t0) / 1000.0f);
       t0 = t1;
       
       xSemaphoreTake(bufferIndexMutex, portMAX_DELAY);
@@ -138,8 +132,6 @@ void adcTask(void *pvParameters) {
     float freq = peakFreq;
     xSemaphoreGive(peakFreqMutex);
 
-    Serial.printf(">peak_freq_adaptive:%.2f\n", freq);
-    
     // Calculate delay but cap it to prevent watchdog timeout (max 100ms)
     uint32_t delayUs = 1000000UL / (freq == 0 ? SAMPLING_FREQUENCY : (uint32_t)(2 * freq));
     if (delayUs > 100000) delayUs = 100000;  // Cap at 100ms
@@ -149,9 +141,16 @@ void adcTask(void *pvParameters) {
 }
 
 void mqttTask(void *pvParameters) {
+  unsigned long lastPublishTime = 0;
+  const unsigned long publishInterval = 10000; // 10 seconds
+  Serial.print ("Attempting MQTT Connection");
   while (true) {
     MQTTloop();
+    Serial.print ("MQTT Connected");
 
+    unsigned long now = millis();
+    if (now - lastPublishTime >= publishInterval)
+      lastPublishTime = now;
     float avg = 0;
     xSemaphoreTake(avgMutex, portMAX_DELAY);
     if (avgReady) {
@@ -167,7 +166,7 @@ void mqttTask(void *pvParameters) {
       trackTransmission(strlen(msg));
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -195,6 +194,9 @@ void loraTask(void *pvParameters) {
     xSemaphoreTake(avgMutex, portMAX_DELAY);
     float valueToSend = lastAvg;
     xSemaphoreGive(avgMutex);
+    // Sending Value as raw bytes and decoding using custom javascript
+    // uploaded on the TTN Console, as sending strings is expensive over LoRaWAN
+    // (Not the case for MQTT, as it uses WiFi).
     loRaSend(valueToSend);
     trackTransmission(sizeof(float));
     vTaskDelay(pdMS_TO_TICKS(15000));
@@ -202,7 +204,7 @@ void loraTask(void *pvParameters) {
 }
 
 void computeFFT() {
-  if (adaptiveActive) return;
+  // if (adaptiveActive) return;
   
   // Apply window (alternate elements are 0 since we're using
   // a complex FFT buffer)
@@ -211,7 +213,9 @@ void computeFFT() {
 
   dsps_fft2r_fc32(fftBuffer, SAMPLES);
   dsps_bit_rev_fc32(fftBuffer, SAMPLES);
-
+  
+  // resetting bin0 for the constant components.
+  fftBuffer[0] = 0;
   // Find peak magnitude across all bins
   double peakMag = 0.0;
   for (int i = 1; i < SAMPLES / 2; i++) {
@@ -222,8 +226,8 @@ void computeFFT() {
   }
 
   double threshold = peakMag * FFT_MAG_THRESHOLD_RATIO;
-  float freqRes = SAMPLING_FREQUENCY / (float)SAMPLES;
-  
+  float freqRes = (peakFreq == 0? SAMPLING_FREQUENCY : peakFreq) / (float)SAMPLES;
+
   xSemaphoreTake(peakFreqMutex, portMAX_DELAY);
   // Highest-frequency LOCAL PEAK above threshold
   for (int i = 2; i < SAMPLES / 2 - 1; i++) {
@@ -263,10 +267,9 @@ void switchBuffer () {
     fftBuffer[i * 2 + 0] = sampleBuffer[i];
     fftBuffer[i * 2 + 1] = 0.0f;
   }
-  // bufferIndex reset by caller after releasing mutex
 }
 
-float computeAverage(int* buf, int len) {
+float computeAverage(float* buf, int len) {
   if (len <= 0) return 0.0f;
   float sum = 0.0f;
   for (int i = 0; i < len; i++) sum += buf[i];
@@ -285,6 +288,10 @@ float computeAverage(int* buf, int len) {
 // Before FFT completes peakFreq == 0 so we're at the initial rate.
 // After FFT sets peakFreq we're at the adaptive rate.
 void trackTransmission(uint32_t payloadBytes) {
+  bytesInitial = 0;
+  packetsInitial = 0;
+  bytesAdaptive = 0;
+  packetsAdaptive = 0;
   uint32_t totalBytes = payloadBytes + 13; // 13 bytes LoRaWAN MAC overhead
   if (!adaptiveActive) {
     bytesInitial += totalBytes;
@@ -299,9 +306,9 @@ void trackTransmission(uint32_t payloadBytes) {
   float bpsInitial = elapsedSec > 0 && packetsInitial > 0 ? bytesInitial  / elapsedSec : 0.0f;
   float bpsAdaptive = elapsedSec > 0 && packetsAdaptive > 0 ? bytesAdaptive / elapsedSec : 0.0f;
 
-  Serial.printf(">bytes_initial:%u\n",    bytesInitial);
-  Serial.printf(">bytes_adaptive:%u\n",   bytesAdaptive);
-  Serial.printf(">throughput_initial:%.3f\n",  bpsInitial);
+  Serial.printf(">bytes_initial:%u\n", bytesInitial);
+  Serial.printf(">bytes_adaptive:%u\n", bytesAdaptive);
+  Serial.printf(">throughput_initial:%.3f\n", bpsInitial);
   Serial.printf(">throughput_adaptive:%.3f\n", bpsAdaptive);
 
   if (adaptiveActive && packetsAdaptive > 0 && packetsAdaptive % 10 == 0) {
