@@ -32,10 +32,10 @@
 // Signal 2 — Medium frequency (5, 10, 25 Hz) — ACTIVE
 // f_max=25Hz → adaptive rate=50Hz → 10x reduction from 500Hz
 // Good balance: fast window fill, clearly composite, meaningful saving
-const float amplitudes[NUM_COMPONENTS]  = { 2.0f };
-const float frequencies[NUM_COMPONENTS] = { 5.0f };
-//const float amplitudes[NUM_COMPONENTS]  = { 2.0f, 4.0f, 1.5f };
-//const float frequencies[NUM_COMPONENTS] = { 5.0f, 10.0f, 25.0f };
+const float amplitudes[NUM_COMPONENTS]  = { 20.0f };
+const float frequencies[NUM_COMPONENTS] = { 20.0f };
+// const float amplitudes[NUM_COMPONENTS]  = { 2.0f, 4.0f, 1.5f };
+// const float frequencies[NUM_COMPONENTS] = { 5.0f, 10.0f, 25.0f };
 
 // Signal 3 — High frequency (25, 50, 100 Hz)
 // f_max=100Hz → adaptive rate=200Hz → 2.5x reduction

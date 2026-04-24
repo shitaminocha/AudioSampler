@@ -336,7 +336,18 @@ After 100 samples, the average adjusted RTT is printed to Serial.
 
 ![alt text](Images\image-6.png)
 
----
+### Signal 2: 
+ A = 2 sin (2 * PI * 5t) + 4 sin (2 * PI * 10t) + 1.5 sin (2 * PI * 25t)
+
+ ![alt text](Images/Signal2.png)
+
+
+ ![alt text](Images/Signal2_current.png)
+
+ ### Signal 3: 
+ A = 8 sin (2 * PI * 20t)
+
+ ![alt text](Images/Signal3_current.png)
 
 ## LLM Usage
 
