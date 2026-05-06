@@ -351,6 +351,8 @@ After 100 samples, the average adjusted RTT is printed to Serial.
 
  ![alt text](Images/Signal3_current.png)
 
+### Sound device
+
 ## LLM Usage
 
 This project was developed iteratively using Claude as the primary coding assistant. The workflow consisted of a series of prompts covering:
